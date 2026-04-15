@@ -99,6 +99,15 @@ export function Editor({ image, onReset: _onReset, onNewImage }: Props) {
     defaultRectSize,
   })
 
+  // Lock body scroll when any modal is open
+  const anyModalOpen = showMethodModal || showInfo || !!editingRegion
+  useEffect(() => {
+    if (!anyModalOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [anyModalOpen])
+
   // Persist selected method to localStorage
   useEffect(() => {
     localStorage.setItem(LS_KEY, method)
