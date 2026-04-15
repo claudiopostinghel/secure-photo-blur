@@ -251,11 +251,6 @@ export function RegionEditModal({
         <div class="rem-topbar">
           <button class="rem-close-btn" type="button" onClick={onCancel} title="Close">×</button>
           <span class="rem-label">{label}</span>
-          {onDelete && (
-            <button class="rem-delete-btn" type="button" onClick={onDelete} title="Delete region">
-              Delete
-            </button>
-          )}
         </div>
 
         {/* Main area */}
@@ -506,10 +501,10 @@ export function RegionEditModal({
         .rem-delete-footer-btn {
           flex: 1;
           padding: 8px 0;
-          border: 1px solid rgba(220,38,38,0.4);
+          border: 1px solid var(--border);
           border-radius: var(--radius);
-          background: rgba(220,38,38,0.08);
-          color: #dc2626;
+          background: transparent;
+          color: var(--text-secondary);
           font-size: 13px;
           font-weight: 600;
           font-family: var(--font-sans);
@@ -518,27 +513,11 @@ export function RegionEditModal({
           align-items: center;
           justify-content: center;
           gap: 6px;
-          transition: background var(--transition), border-color var(--transition);
+          transition: background var(--transition), border-color var(--transition), color var(--transition);
         }
         .rem-delete-footer-btn:hover {
-          background: rgba(220,38,38,0.18);
-          border-color: #dc2626;
-        }
-        .rem-delete-btn {
-          padding: 6px 14px;
-          border: 1px solid var(--border);
-          border-radius: var(--radius);
-          background: transparent;
-          color: var(--text-secondary);
-          font-size: 13px;
-          font-family: var(--font-sans);
-          cursor: pointer;
-          transition: background var(--transition), color var(--transition);
-        }
-        .rem-delete-btn:hover {
-          background: rgba(220,38,38,0.15);
-          color: #dc2626;
-          border-color: #dc2626;
+          background: rgba(255,255,255,0.06);
+          border-color: var(--text-secondary);
         }
         .rem-main {
           flex: 1;
