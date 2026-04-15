@@ -1,4 +1,4 @@
-import { useMemo } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { BlurMethod, FaceDetectionResult, LoadedImage, Rect, RegionShape } from '../types'
 import { BLUR_SECURITY } from '../types'
 
@@ -34,10 +34,10 @@ const THUMB_CSS = 112
 const CONTEXT   = 2.2
 
 interface ThumbData {
-  dataUrl: string
+  blobUrl: string
 }
 
-function makeThumbnail(bitmap: ImageBitmap, rect: Rect, scale: number): ThumbData {
+function makeThumbnailAsync(bitmap: ImageBitmap, rect: Rect, scale: number): Promise<Blob> {
   const vSize = Math.max(rect.width, rect.height) * CONTEXT
   const vx = rect.x + rect.width  / 2 - vSize / 2
   const vy = rect.y + rect.height / 2 - vSize / 2
@@ -46,20 +46,79 @@ function makeThumbnail(bitmap: ImageBitmap, rect: Rect, scale: number): ThumbDat
   canvas.height = THUMB_CSS
   const ctx = canvas.getContext('2d')!
   ctx.drawImage(bitmap, vx / scale, vy / scale, vSize / scale, vSize / scale, 0, 0, THUMB_CSS, THUMB_CSS)
-  return { dataUrl: canvas.toDataURL('image/jpeg', 0.85) }
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      blob => {
+        canvas.width = 0
+        canvas.height = 0
+        blob ? resolve(blob) : reject(new Error('toBlob failed'))
+      },
+      'image/jpeg',
+      0.85,
+    )
+  })
+}
+
+function rectsFingerprint(rects: Rect[]): string {
+  return rects.map(r => `${r.x},${r.y},${r.width},${r.height}`).join('|')
 }
 
 export function FaceList({
   faces, rectEntries, onToggle, onRectToggle, onRectDelete, onOpenModal, detecting, isMobile, image, method, onMethodClick,
 }: Props) {
-  const faceThumbData = useMemo(
-    () => faces.map(e => makeThumbnail(image.bitmap, e.face.rect, image.scale)),
-    [faces, image]
-  )
-  const rectThumbData = useMemo(
-    () => rectEntries.map(e => makeThumbnail(image.bitmap, e.rect, image.scale)),
-    [rectEntries, image]
-  )
+  const faceRects = faces.map(e => e.face.rect)
+  const faceFingerprint = rectsFingerprint(faceRects)
+  const [faceThumbData, setFaceThumbData] = useState<ThumbData[]>([])
+  const faceUrlsRef = useRef<string[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    const prevUrls = faceUrlsRef.current
+    if (faceRects.length === 0) {
+      prevUrls.forEach(u => { try { URL.revokeObjectURL(u) } catch {} })
+      faceUrlsRef.current = []
+      setFaceThumbData([])
+      return
+    }
+    Promise.all(faceRects.map(rect => makeThumbnailAsync(image.bitmap, rect, image.scale))).then(blobs => {
+      if (cancelled) return
+      prevUrls.forEach(u => { try { URL.revokeObjectURL(u) } catch {} })
+      const urls = blobs.map(b => URL.createObjectURL(b))
+      faceUrlsRef.current = urls
+      setFaceThumbData(urls.map(u => ({ blobUrl: u })))
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faceFingerprint, image])
+
+  useEffect(() => () => { faceUrlsRef.current.forEach(u => { try { URL.revokeObjectURL(u) } catch {} }) }, [])
+
+  const rectRects = rectEntries.map(e => e.rect)
+  const rectFingerprint = rectsFingerprint(rectRects)
+  const [rectThumbData, setRectThumbData] = useState<ThumbData[]>([])
+  const rectUrlsRef = useRef<string[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    const prevUrls = rectUrlsRef.current
+    if (rectRects.length === 0) {
+      prevUrls.forEach(u => { try { URL.revokeObjectURL(u) } catch {} })
+      rectUrlsRef.current = []
+      setRectThumbData([])
+      return
+    }
+    Promise.all(rectRects.map(rect => makeThumbnailAsync(image.bitmap, rect, image.scale))).then(blobs => {
+      if (cancelled) return
+      prevUrls.forEach(u => { try { URL.revokeObjectURL(u) } catch {} })
+      const urls = blobs.map(b => URL.createObjectURL(b))
+      rectUrlsRef.current = urls
+      setRectThumbData(urls.map(u => ({ blobUrl: u })))
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rectFingerprint, image])
+
+  useEffect(() => () => { rectUrlsRef.current.forEach(u => { try { URL.revokeObjectURL(u) } catch {} }) }, [])
 
   if (detecting) {
     return (
@@ -114,7 +173,10 @@ export function FaceList({
                 onClick={() => onOpenModal('face', i)}
                 onKeyDown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') onOpenModal('face', i) }}
               >
-                <img class="face-item-thumb" src={td.dataUrl} alt={`Face ${i + 1}`} />
+                {td
+                  ? <img class="face-item-thumb" src={td.blobUrl} alt={`Face ${i + 1}`} />
+                  : <div class="face-item-thumb" style={{ background: '#1a1a1a' }} />
+                }
                 <div class="face-item-edit-hint">
                   <IconEdit />
                 </div>
@@ -139,7 +201,10 @@ export function FaceList({
                 onClick={() => onOpenModal('rect', i)}
                 onKeyDown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') onOpenModal('rect', i) }}
               >
-                <img class="face-item-thumb" src={td.dataUrl} alt={`Region ${i + 1}`} />
+                {td
+                  ? <img class="face-item-thumb" src={td.blobUrl} alt={`Region ${i + 1}`} />
+                  : <div class="face-item-thumb" style={{ background: '#1a1a1a' }} />
+                }
                 <div class="face-item-edit-hint">
                   <IconEdit />
                 </div>

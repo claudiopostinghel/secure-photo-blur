@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { LoadedImage, Rect, RegionShape } from '../types'
 
 interface Props {
@@ -39,22 +39,40 @@ interface DragState {
 }
 
 interface ThumbData {
-  dataUrl: string
+  blobUrl: string | null
   vx: number
   vy: number
   vSize: number
 }
 
-function makeThumbnail(bitmap: ImageBitmap, rect: Rect, scale: number, outputSize: number): ThumbData {
+function computeViewport(rect: Rect): { vx: number; vy: number; vSize: number } {
   const vSize = Math.max(rect.width, rect.height) * CONTEXT
   const vx = rect.x + rect.width  / 2 - vSize / 2
   const vy = rect.y + rect.height / 2 - vSize / 2
+  return { vx, vy, vSize }
+}
+
+function renderThumbnailBlob(
+  bitmap: ImageBitmap,
+  vx: number, vy: number, vSize: number,
+  scale: number, outputSize: number,
+): Promise<Blob> {
   const canvas = document.createElement('canvas')
   canvas.width  = outputSize
   canvas.height = outputSize
   const ctx = canvas.getContext('2d')!
   ctx.drawImage(bitmap, vx / scale, vy / scale, vSize / scale, vSize / scale, 0, 0, outputSize, outputSize)
-  return { dataUrl: canvas.toDataURL('image/jpeg', 0.9), vx, vy, vSize }
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      blob => {
+        canvas.width = 0
+        canvas.height = 0
+        blob ? resolve(blob) : reject(new Error('toBlob failed'))
+      },
+      'image/jpeg',
+      0.9,
+    )
+  })
 }
 
 function rectToSvg(rect: Rect, vx: number, vy: number, vSize: number, outputSize: number) {
@@ -77,11 +95,32 @@ export function RegionEditModal({
     window.innerHeight - (isMobile ? 64 : 96),
   )
 
-  const td = useMemo(
-    () => makeThumbnail(image.bitmap, rect, image.scale, modalSize),
+  const viewport = useMemo(
+    () => computeViewport(rect),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [image, rect.x, rect.y, rect.width, rect.height, modalSize]
+    [rect.x, rect.y, rect.width, rect.height],
   )
+
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const blobUrlRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    renderThumbnailBlob(image.bitmap, viewport.vx, viewport.vy, viewport.vSize, image.scale, modalSize).then(blob => {
+      if (cancelled) return
+      if (blobUrlRef.current) { try { URL.revokeObjectURL(blobUrlRef.current) } catch {} }
+      const url = URL.createObjectURL(blob)
+      blobUrlRef.current = url
+      setBlobUrl(url)
+    })
+    return () => { cancelled = true }
+  }, [image, viewport.vx, viewport.vy, viewport.vSize, modalSize])
+
+  useEffect(() => () => {
+    if (blobUrlRef.current) { try { URL.revokeObjectURL(blobUrlRef.current) } catch {} }
+  }, [])
+
+  const td: ThumbData = { blobUrl, ...viewport }
 
   const dragRef   = useRef<DragState | null>(null)
   const svgRef    = useRef<SVGSVGElement>(null)
@@ -222,7 +261,10 @@ export function RegionEditModal({
         {/* Main area */}
         <div class="rem-main">
           <div class="rem-thumb-wrap" style={{ width: modalSize, height: modalSize }}>
-            <img class="rem-thumb" src={td.dataUrl} alt={label} width={modalSize} height={modalSize} />
+            {td.blobUrl
+              ? <img class="rem-thumb" src={td.blobUrl} alt={label} width={modalSize} height={modalSize} />
+              : <div class="rem-thumb" style={{ width: modalSize, height: modalSize, background: '#1a1a1a' }} />
+            }
 
             <svg
               ref={svgRef}
